@@ -28,7 +28,7 @@ def get_comments_from_reddit(client_id, secret, user_name, password):
     for comment in sub_reddit.stream.comments(skip_existing=True):
         print(comment.body)
         push_to_kafka(comment.body)
-        # time.sleep(3)
+        #time.sleep(3)
 
 
 def get_reddit_token(client_id, secret, user_name, password):

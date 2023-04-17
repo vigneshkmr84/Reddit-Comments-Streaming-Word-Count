@@ -2,9 +2,10 @@ import logging
 from pyspark.sql.functions import explode
 from pyspark.sql.functions import split
 import spacy
-import nltk
 from pyspark.sql.functions import lower
-from pyspark.sql.functions import current_timestamp
+
+from pyspark.sql.functions import udf
+from pyspark.sql.functions import current_timestamp, date_trunc
 
 from pyspark.sql.functions import regexp_replace
 from pyspark.sql.functions import trim
@@ -13,6 +14,11 @@ from pyspark.sql.functions import to_json, struct, col
 from pyspark.sql.functions import col
 from pyspark.sql import SparkSession
 from pyspark import SparkConf
+
+from pyspark.sql.types import ArrayType, StructType, StructField, StringType
+
+
+NER = spacy.load("en_core_web_sm")
 
 # from pyspark.streaming import StreamingContext
 conf = SparkConf().setAppName("MyApp").set("spark.jars",
@@ -74,42 +80,54 @@ df = spark.readStream.format("kafka") \
 
 df.printSchema()
 
+words = df
 
-# line to word split
-words = df.select(explode(split(df.value, ' ')).alias('word'))
+# ner_schema = ArrayType(StructType([
+#     StructField("text", StringType()),
+#     StructField("label", StringType())
+# ]))
 
-# remove special characters, trim trailng and leading white space characters, 
-# convert to lowercase
-words = words.withColumn("word", regexp_replace("word", "[^a-zA-Z0-9\\s]+", ""))\
-            .withColumn("word", trim("word"))\
-            .withColumn("word", lower("word"))
+# @udf(returnType=ner_schema)
+# @udf(returnType=ArrayType(StringType()))
+@udf(returnType=StringType())
+def perform_ner(comments):
+    text = NER(comments)
+    return ','.join([ ent.text for ent in text.ents])
 
-# remove empty string
-words = words.filter(col("word").isNotNull() & (col("word") != ""))
-# words = words.withColumn("timestamp", current_timestamp())
+
+words = words.select(perform_ner("value").alias("words"))
+words = words.select(explode(split(words.words, ',')))
+
+# remove empty & null words
+words = words.filter(col("words").isNotNull() & (col("words") != ""))
+words = words.selectExpr("col as words")
+
+# words = words.selectExpr("words as words")
 
 words.printSchema()
 
-# perform named entities
+words = words.withColumn("words", lower("words"))\
+            .withColumn("words", regexp_replace("words", "[^a-zA-Z0-9\\s]+", "")) \
+            .withColumn("words", trim("words"))
 
-ner = words.withColumn("word", )
-# word count
-wordCounts = words.groupBy('word').count()# .withWatermark('timestamp', '10 minutes')
+words = words.withColumn("timestamp", date_trunc("minute", current_timestamp()))
 
-wordCounts.printSchema()
+words.printSchema()
 
-# words = words.select("word").alias('value')
-# words.printSchema()
+# no need to do the word count here.
+# wordCounts = words.groupBy('words', 'timestamp').count()# .withWatermark('timestamp', '10 minutes')
+
+# words = words.withColumn("timestamp", current_timestamp())
 
 # Print the output to the console
-query = words.writeStream.outputMode("append").format("console").start()
+# query = words.writeStream.outputMode("append").format("console").start()
 
-# query = wordCounts\
-#         .selectExpr("CAST(word AS STRING) AS key",  "to_json(struct(*)) AS value") \
-#         .writeStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092") \
-#         .outputMode("complete") \
-#         .option("topic", "word-counts").option("checkpointLocation", "/tmp/checkpoint") \
-#         .start()
+query = words\
+        .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
+        .writeStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092") \
+        .outputMode("update") \
+        .option("topic", "word-counts").option("checkpointLocation", "/tmp/checkpoint") \
+        .start()
 
 
 query.awaitTermination()
