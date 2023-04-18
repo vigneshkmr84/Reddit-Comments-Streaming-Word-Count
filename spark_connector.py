@@ -112,19 +112,28 @@ words = words.withColumn("timestamp", date_trunc("minute", current_timestamp()))
 
 words.printSchema()
 
-window_size = "1 minutes"
+window_size = "5 seconds"
 
 # need to do the word count here.
 # wordCounts = words.groupBy('words', 'timestamp').count()# .withWatermark('timestamp', '1 minutes')
 # wordCounts = words.groupBy('words').count()
 
-words_tumbling = words.groupBy(window("timestamp", windowDuration=window_size), "words")\
-                            .count().alias("count")
+words_tumbling = words.groupBy(window("timestamp", windowDuration=window_size), "words").count().alias("count")
+                            # .withWatermark("window.end", "1 minutes")
+                            
+
+# word_counts = words_tumbling \
+#                 .agg({"count": "sum"}) \
+#                 .withColumnRenamed("sum(count)", "total_count")
+
+# word_counts.show()
+
+# words_tumbling.printSchema()
 
 # words = words.withColumn("timestamp", current_timestamp())
 
 # Print the output to the console
-# query = words.writeStream.outputMode("append").format("console").start()
+query = words_tumbling.writeStream.outputMode("complete").format("console").start()
 
 # use this schema for pushing to the final topic
 final_schema = StructType([
@@ -133,13 +142,28 @@ final_schema = StructType([
     StructField("count", IntegerType(), True)
 ])
 
+def push_to_kafka(df):
+    df.selectExpr("CAST(timestamp AS STRING) as key", "to_json(struct(*)) as value")\
+      .write\
+      .format("kafka")\
+      .option("kafka.bootstrap.servers", "localhost:9092")\
+      .option("topic", "word-counts")\
+      .mode("append")\
+      .save()
+
 # query = wordCounts\
-query = words_tumbling\
-        .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
-        .writeStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092") \
-        .outputMode("append") \
-        .option("topic", "word-counts").option("checkpointLocation", checkpoint_dir) \
-        .start()
+# query = words_tumbling\
+#         .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
+#         .writeStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092") \
+#         .outputMode("append") \
+#         .option("topic", "word-counts").option("checkpointLocation", checkpoint_dir) \
+#         .start()
+
+# query = words_tumbling.writeStream\
+#                       .foreachBatch(push_to_kafka)\
+#                       .outputMode("append")\
+#                       .option("checkpointLocation", "/tmp/checkpoint")\
+#                       .start()
 
 
-query.awaitTermination()
+# query.awaitTermination()
