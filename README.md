@@ -129,11 +129,15 @@ Body:
 ##### Running the code
 
 ``` bash
-spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py
+spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py <CHECKPOINT_DIR> <BOOTSTRAP_SERVER> <READ_TOPIC> <WRITE_TOPIC>
+```
+
+#### Sample
+``` bash
+spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py /tmp/checkpoint localhost:9092 reddit-comments word-counts
 ```
 
 **NOTE: Make sure the `spark-sql-kafka` package version matches that of pyspark**
-
 
 
 ## Start Reddit Comments Producer

@@ -1,3 +1,6 @@
+
+ 
+
 import logging
 import spacy
 from pyspark.sql.functions import lower, udf, current_timestamp, date_trunc, regexp_replace\
@@ -13,21 +16,28 @@ import shutil
 import os
 import nltk
 from nltk.corpus import stopwords
+import sys
 
+args = sys.argv
+
+if len(args) != 5:
+    print("Pass sufficnent arguments.")
+    print('Help: spark_connector.py <CHECKPOINT_DIR> <BOOTSTRAP_SERVER> <READ_TOPIC> <WRITE_TOPIC>')
 # specify the checkpoint directory
-checkpoint_dir = "/tmp/checkpoint"
+CHECKPOINT_DIR = args[1]
+BOOTSTRAP_SERVER = args[2]
+READ_TOPIC = args[3]
+WRITE_TOPIC = args[4]
 
 # delete the checkpoint directory if it exists
-if os.path.exists(checkpoint_dir):
-    shutil.rmtree(checkpoint_dir)
+if os.path.exists(CHECKPOINT_DIR):
+    print('Clearing checkpoint dir ', CHECKPOINT_DIR)
+    shutil.rmtree(CHECKPOINT_DIR)
 
 nltk.download('stopwords')
 NER = spacy.load("en_core_web_sm")
 
-# from pyspark.streaming import StreamingContext
-conf = SparkConf().setAppName("MyApp").set("spark.jars",
-"/Users/vigneshthirunavukkarasu/Downloads/kafka_clients/kafka-clients-3.4.0.jar")
-# spark = SparkSession.builder.config(conf=conf).getOrCreate()
+conf = SparkConf().setAppName("MyApp").set("spark.jars", "kafka-clients-3.4.0.jar")
 
 
 # test code to check if a file is loaded
@@ -42,27 +52,6 @@ conf = SparkConf().setAppName("MyApp").set("spark.jars",
 #         .master("local") \
 #         .getOrCreate()
 
-# spark.sparkContext.setLogLevel("ERROR")
-
-# # Create DataSet representing the stream of input lines from kafka
-# lines = spark \
-#     .readStream \
-#     .format("kafka") \
-#     .option("kafka.bootstrap.servers", "localhost:9092") \
-#     .option("subscribe", "reddit-comments") \
-#     .load() \
-#     .selectExpr("CAST(value AS STRING)")
-
-# print("check1")
-
-# query = spark \
-#     .writeStream \
-#     .outputMode("append") \
-#     .format("console") \
-#     .start()
-
-# query.awaitTermination()
-
 
 spark = SparkSession.builder.appName("reddit-comments-stream-application").getOrCreate()
 
@@ -73,17 +62,12 @@ logging.getLogger("py4j").setLevel(logging.ERROR)
 # Create a DataFrame representing the stream of input lines from Kafka
 df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", "localhost:9092") \
-    .option("subscribe", "reddit-comments") \
+    .option("subscribe", READ_TOPIC) \
     .load().selectExpr("CAST(value AS STRING)")
 
 df.printSchema()
 
 words = df
-
-# ner_schema = ArrayType(StructType([
-#     StructField("text", StringType()),
-#     StructField("label", StringType())
-# ]))
 
 # @udf(returnType=ner_schema)
 # @udf(returnType=ArrayType(StringType()))
@@ -96,8 +80,11 @@ def perform_ner(comments):
 
 stop_words = stopwords.words('english')
 
+# filter NER words
 words = words.select(perform_ner("value").alias("words"))
+# remove stop words
 words = words.filter(~col("words").isin(stop_words))
+# split sentence into words
 words = words.select(explode(split(words.words, ',')))
 
 # remove empty & null words
@@ -116,7 +103,7 @@ words = words.withColumn("words", lower("words"))\
 # remove empty & null words
 words = words.filter(col("words").isNotNull() & (col("words") != ""))
 words.printSchema()
-# words = words.selectExpr("col as words")
+
 
 # words = words.withColumn("timestamp", date_trunc("second", current_timestamp()))
 # words = words.withColumn("timestamp", date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
@@ -156,9 +143,9 @@ console_query = words.orderBy(desc("count")).writeStream\
 
 query = words\
         .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
-        .writeStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092") \
+        .writeStream.format("kafka").option("kafka.bootstrap.servers", BOOTSTRAP_SERVER) \
         .outputMode("update") \
-        .option("topic", "word-counts").option("checkpointLocation", checkpoint_dir) \
+        .option("topic", WRITE_TOPIC).option("checkpointLocation", CHECKPOINT_DIR) \
         .start()
 
 query.awaitTermination()
