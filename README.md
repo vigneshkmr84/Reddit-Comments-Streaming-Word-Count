@@ -29,7 +29,7 @@ Download Kafka 3.4.0 from https://downloads.apache.org/kafka/3.4.0/kafka-3.4.0-s
 
 ---
 
-# ELK (Elastic-LogStash-Kibana)
+## ELK (Elastic-LogStash-Kibana)
 
 Download the ELK Packages from the below URL's  
 
@@ -124,6 +124,8 @@ Body:
 
 `pip install pyspark==3.1.1`
 
+---
+
 # Code
 
 ##### Running the code
@@ -137,12 +139,15 @@ spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf 
 spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py /tmp/checkpoint localhost:9092 reddit-comments word-counts
 ```
 
+``` bash
+bash start_pyspark_connector.sh
+```
 **NOTE: Make sure the `spark-sql-kafka` package version matches that of pyspark**
 
 
 ## Start Reddit Comments Producer
 
-`comments_producer.py` will keep reading **COMMENTS** from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
+`comments_producer.py` will keep streaming **COMMENTS** from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
 
 ``` bash
 python -u comments_producer.py reddit-comments localhost:9092
