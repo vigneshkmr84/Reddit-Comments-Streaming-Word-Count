@@ -1,152 +1,125 @@
-
- 
-
 import logging
-import spacy
-from pyspark.sql.functions import lower, udf, current_timestamp, date_trunc, regexp_replace\
-                    , trim, col, explode, split, desc
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType, IntegerType
-from pyspark.sql.functions import lit
-
-from pyspark.sql import SparkSession
-from pyspark import SparkConf
-
-from pyspark.sql.types import StringType
+import argparse
 import shutil
 import os
+import spacy
+from pyspark.sql.functions import lower, udf, current_timestamp, date_trunc, regexp_replace\
+                    , trim, col, explode, split, desc, lit
+# from pyspark.sql.types import StructType, StructField, StringType, TimestampType, IntegerType
+from pyspark.sql.types import StringType
+from pyspark.sql import SparkSession
 import nltk
 from nltk.corpus import stopwords
-import sys
 
-args = sys.argv
+def parse_args():
+    parser = argparse.ArgumentParser()
 
-if len(args) != 5:
-    print("Pass sufficnent arguments.")
-    print('Help: spark_connector.py <CHECKPOINT_DIR> <BOOTSTRAP_SERVER> <READ_TOPIC> <WRITE_TOPIC>')
-# specify the checkpoint directory
-CHECKPOINT_DIR = args[1]
-BOOTSTRAP_SERVER = args[2]
-READ_TOPIC = args[3]
-WRITE_TOPIC = args[4]
+    parser.add_argument("--read-topic"
+                        , help="Kafka topic to stream messages"
+                        , type=str
+                        , required=True)
 
-# delete the checkpoint directory if it exists
-if os.path.exists(CHECKPOINT_DIR):
-    print('Clearing checkpoint dir ', CHECKPOINT_DIR)
-    shutil.rmtree(CHECKPOINT_DIR)
+    parser.add_argument("--write-topic"
+                        , help="Kafka topic to push messages"
+                        , type=str
+                        , required=True)
 
-nltk.download('stopwords')
-NER = spacy.load("en_core_web_sm")
+    parser.add_argument("--bootstrap-server"
+                        , help="Kafka bootstrap server"
+                        , type=str
+                        , required=True)
 
-conf = SparkConf().setAppName("MyApp").set("spark.jars", "kafka-clients-3.4.0.jar")
+    parser.add_argument("--checkpoint-dir"
+                        , help="Checkpoint dir"
+                        , type=str
+                        , required=True)
 
+    ags = parser.parse_args()
 
-# test code to check if a file is loaded
-# input_file_path = "/Users/vigneshthirunavukkarasu/Downloads/sample.txt"
-# rdd = spark.sparkContext.textFile(input_file_path)
-# print(rdd.collect())
+    ckpoint_dir = ags.checkpoint_dir
+    if os.path.exists(ckpoint_dir):
+        print('Clearing checkpoint dir : ', ckpoint_dir)
+        shutil.rmtree(ckpoint_dir)
 
-# .config(conf=conf) \
-# spark = SparkSession \
-#         .builder \
-#         .appName("test") \
-#         .master("local") \
-#         .getOrCreate()
+    return ags
 
+def run(bootstrap_server, read_topic, write_topic, checkpoint_dir):
+    nltk.download('stopwords')
+    ner = spacy.load("en_core_web_sm")
+    ner_label_list = ["PERSON","NORP","FAC","ORG","GPE","LOC","PRODUCT","EVENT","WORK_OF_ART","LAW","LANGUAGE"]
+    stop_words = stopwords.words('english')
 
-spark = SparkSession.builder.appName("reddit-comments-stream-application").getOrCreate()
+    spark = SparkSession.builder.appName("reddit-comments-stream-application").getOrCreate()
 
-# supress the unwanted logging
-spark.sparkContext.setLogLevel("WARN")
-logging.getLogger("py4j").setLevel(logging.ERROR)
+    # supress the unwanted logging
+    spark.sparkContext.setLogLevel("WARN")
+    logging.getLogger().setLevel(logging.ERROR)
+    # logging.getLogger("pyspark.sql.streaming.kafka.KafkaDataConsumer").setLevel(logging.WARN)
+    logging.getLogger("py4j").setLevel(logging.ERROR)
 
-# Create a DataFrame representing the stream of input lines from Kafka
-df = spark.readStream.format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9092") \
-    .option("subscribe", READ_TOPIC) \
-    .load().selectExpr("CAST(value AS STRING)")
+    # Create a DataFrame representing the stream of input lines from Kafka
+    df = spark.readStream.format("kafka") \
+                        .option("kafka.bootstrap.servers", bootstrap_server) \
+                        .option("subscribe", read_topic) \
+                        .load() \
+                        .selectExpr("CAST(value AS STRING)")
 
-df.printSchema()
+    df.printSchema()
 
-words = df
+    words = df
 
-# @udf(returnType=ner_schema)
-# @udf(returnType=ArrayType(StringType()))
+    @udf(returnType=StringType())
+    def perform_ner(comments):
+        text = ner(comments)
+        return ','.join([ ent.text for ent in text.ents if ent.label_ in ner_label_list])
 
-NER_LIST = ["PERSON","NORP","FAC","ORG","GPE","LOC","PRODUCT","EVENT","WORK_OF_ART","LAW","LANGUAGE"]
-@udf(returnType=StringType())
-def perform_ner(comments):
-    text = NER(comments)
-    return ','.join([ ent.text for ent in text.ents if ent.label_ in NER_LIST])
+    # Filter NER words & remove stop words
+    words = words.select(perform_ner("value").alias("words"))\
+                 .filter(~col("words").isin(stop_words))
 
-stop_words = stopwords.words('english')
+    # Split NER sentance with , and remove empty / null words
+    words = words.select(explode(split(words.words, ','))) \
+                .filter(col("words").isNotNull() & (col("words") != "")) \
+                .selectExpr("col as words")
 
-# filter NER words
-words = words.select(perform_ner("value").alias("words"))
-# remove stop words
-words = words.filter(~col("words").isin(stop_words))
-# split sentence into words
-words = words.select(explode(split(words.words, ',')))
+    # make words to lower, remove punctuations and trim
+    words = words.withColumn("words", lower("words"))\
+                .withColumn("words", regexp_replace("words", "[^a-zA-Z0-9\\s]+", "")) \
+                .withColumn("words", trim("words"))
 
-# remove empty & null words
-words = words.filter(col("words").isNotNull() & (col("words") != ""))
-words = words.selectExpr("col as words")
+    # remove empty & null words
+    words = words.filter(col("words").isNotNull() & (col("words") != ""))
 
-# words = words.selectExpr("words as words")
+    # perform word count
+    words_count = words.groupBy('words').count()
 
-words.printSchema()
+    words_count.printSchema()
 
-words = words.withColumn("words", lower("words"))\
-            .withColumn("words", regexp_replace("words", "[^a-zA-Z0-9\\s]+", "")) \
-            .withColumn("words", trim("words")) \
-            .withColumn("count", lit(1))
-
-# remove empty & null words
-words = words.filter(col("words").isNotNull() & (col("words") != ""))
-words.printSchema()
-
-
-# words = words.withColumn("timestamp", date_trunc("second", current_timestamp()))
-# words = words.withColumn("timestamp", date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
-# words = words.withColumn("count", lit(1))
-
-words.printSchema()
-
-window_size = "5 seconds"
-
-# need to do the word count here.
-words_count = words.groupBy('words').count()
-# wordCounts = words.groupBy('words').count()
-
-words_count = words_count.withColumn("timestamp", date_trunc("second", current_timestamp()))
-
-words_count.printSchema()
-
-# words_tumbling = words.groupBy(window("timestamp", windowDuration=window_size), "words").count().alias("count")
-
-# words = words.withColumn("timestamp", current_timestamp())
-
-# Print the output to the console
-# query = words.writeStream.outputMode("append").format("console").start()
-
-# use this schema for pushing to the final topic
-final_schema = StructType([
-    StructField("words", StringType(), True),
-    StructField("timestamp", TimestampType(), True),
-    StructField("count", IntegerType(), True)
-])
-
-console_query = words_count.orderBy(desc("count")).writeStream\
-                    .outputMode("complete")\
-                    .format("console")\
-                    .start()
+    console_query = words_count.orderBy(desc("count")).writeStream\
+                        .outputMode("complete")\
+                        .format("console")\
+                        .start()
 
 
-query = words\
-        .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
-        .writeStream.format("kafka").option("kafka.bootstrap.servers", BOOTSTRAP_SERVER) \
-        .outputMode("update") \
-        .option("topic", WRITE_TOPIC).option("checkpointLocation", CHECKPOINT_DIR) \
-        .start()
+    query = words_count\
+            .selectExpr("CAST(words AS STRING) AS key",  "to_json(struct(*)) AS value") \
+            .writeStream.format("kafka").option("kafka.bootstrap.servers", bootstrap_server) \
+            .outputMode("update") \
+            .option("topic", write_topic).option("checkpointLocation", checkpoint_dir) \
+            .start()
 
-query.awaitTermination()
-console_query.awaitTermination()
+    query.awaitTermination()
+    console_query.awaitTermination()
+
+if __name__ == '__main__':
+    logging.getLogger().setLevel(logging.ERROR)
+
+    logging.getLogger("pyspark.sql.streaming.kafka.KafkaDataConsumer").setLevel(logging.WARN)
+
+    args = parse_args()
+    read_topic = args.read_topic
+    write_topic = args.write_topic
+    bootstrap_server = args.bootstrap_server
+    checkpoint_dir = args.checkpoint_dir
+
+    run(bootstrap_server, read_topic, write_topic, checkpoint_dir)

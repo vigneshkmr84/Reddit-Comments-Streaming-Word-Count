@@ -11,7 +11,7 @@ Download Kafka 3.4.0 from https://downloads.apache.org/kafka/3.4.0/kafka-3.4.0-s
 
 #### Create topic:
 `bin/kafka-topics.sh --create --topic reddit-comments --bootstrap-server localhost:9092`  
-`bin/kafka-topics.sh --create --toic word-counts --bootstrap-server localhost:9092`
+`bin/kafka-topics.sh --create --topic word-counts --bootstrap-server localhost:9092`
 
 #### List topics:
 `bin/kafka-topics.sh --bootstrap-server=localhost:9092 --list`
@@ -44,11 +44,9 @@ Download the ELK Packages from the below URL's
 Disable SSL in `config/elasticsearch.yml`
 
 ``` config
-
 xpack.security.enabled: false
 xpack.security.http.ssl:
   enabled: false
-
 ```
 
 **Run: `bin/elasticsearch`**
@@ -103,7 +101,6 @@ output {
 Body:
 
 ``` json
-
 "transient": {
    
   "cluster.routing.allocation.disk.threshold_enabled": true,
@@ -111,7 +108,6 @@ Body:
   "cluster.routing.allocation.disk.watermark.high": "1gb",
   "cluster.info.update.interval": "1m"
 }
-
 ```
 
 ---
@@ -136,13 +132,13 @@ spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf 
 
 #### Sample
 ``` bash
-spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py /tmp/checkpoint localhost:9092 reddit-comments word-counts
+park-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py --checkpoint-dir /tmp/checkpoint --bootstrap-server localhost:9092 --read-topic reddit-comments --write-topic word-counts
 ```
 
 ``` bash
 bash start_pyspark_connector.sh
 ```
-**NOTE: Make sure the `spark-sql-kafka` package version matches that of pyspark**
+**NOTE: Make sure the `spark-sql-kafka` package version matches that of pyspark installed.**
 
 
 ## Start Reddit Comments Producer
@@ -150,7 +146,7 @@ bash start_pyspark_connector.sh
 `comments_producer.py` will keep streaming **COMMENTS** from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
 
 ``` bash
-python -u comments_producer.py reddit-comments localhost:9092
+python -u comments_producer.py --kafka-topic reddit-comments --bootstrap-server localhost:9092
 ```
 
 **Setting up Reddit for streaming, please refer the url**
