@@ -7,7 +7,7 @@ The project involves setting up of Kafka, ELK, Pyspark along with code for NER p
 # Setting up Infrastructure
 ## Kafka 
 
-### Download
+Download Kafka 3.4.0 from https://downloads.apache.org/kafka/3.4.0/kafka-3.4.0-src.tgz
 
 #### Create topic:
 `bin/kafka-topics.sh --create --topic reddit-comments --bootstrap-server localhost:9092`  
@@ -17,7 +17,7 @@ The project involves setting up of Kafka, ELK, Pyspark along with code for NER p
 `bin/kafka-topics.sh --bootstrap-server=localhost:9092 --list`
 
 #### Kafka Version:
-`kafka-topics.sh --version`
+`bin/kafka-topics.sh --version`
 
 
 #### Get messages in topic:
@@ -30,20 +30,87 @@ The project involves setting up of Kafka, ELK, Pyspark along with code for NER p
 
 # ELK (Elastic-LogStash-Kibana)
 
-### Download
+Download the ELK Packages from the below URL's  
+
+- Kibana: https://www.elastic.co/downloads/kibana
+- Elastic Search: https://www.elastic.co/downloads/elasticsearch
+- LogStash: https://www.elastic.co/downloads/logstash
+<br><br>
+### Starting ELK
+
+#### Elastic Search
+
+Disable SSL in `config/elasticsearch.yml`
+
+``` config
+
+xpack.security.enabled: false
+xpack.security.http.ssl:
+  enabled: false
+
+```
+
+**Run** `bin/elasticsearch`
+
+<br>
+
+#### Kibana
+
+`config/kibana.yml` (Make https -> http)
+elasticsearch.hosts: ['http://192.168.10.21:9200']
+
+
+**Run** `bin/kibana`
+
+<br>
+
+#### LogStash
+
+Create a new file `logstash.conf`
+
+``` config
+input {
+    kafka {
+            bootstrap_servers => "localhost:9092"
+            topics => ["word-counts"]
+    }
+}
+
+filter {
+    json {
+        source => "message"
+    }
+}
+
+output {
+   elasticsearch {
+      hosts => ["http://localhost:9200"]
+      index => "word-counts"
+      workers => 1
+    }
+}
+
+```
+
+**Run** `bin/logstash -f logstash.conf`
+
+<br>
 
 #### ElasticSearch Disk Space Issue
 `PUT` request to `http://localhost:9200/_cluster/settings`
+
 Body:
+
 ``` json
+
 "transient": {
    
-   "cluster.routing.allocation.disk.threshold_enabled": true,
-    "cluster.routing.allocation.disk.watermark.low": "500mb",
-    "cluster.routing.allocation.disk.watermark.high": "1gb",
-    
-    "cluster.info.update.interval": "1m"
-  }
+  "cluster.routing.allocation.disk.threshold_enabled": true,
+  "cluster.routing.allocation.disk.watermark.low": "500mb",
+  "cluster.routing.allocation.disk.watermark.high": "1gb",
+  "cluster.info.update.interval": "1m"
+}
+
 ```
 
 ---
@@ -68,3 +135,18 @@ spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 /Users/
 
 
 
+## Start Reddit Comments Producer
+
+comments_producer.py will keep reading from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
+
+``` bash
+python -u comments_producer.py reddit-comments localhost:9092
+```
+
+## Start PySpark NER Stream Processor
+
+spart_connector.py will read messages from `reddit-comments` topic and filters the Named Entities from each comments and push it to `word-counts` topic.
+
+``` bash
+spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py
+```

@@ -87,10 +87,12 @@ words = df
 
 # @udf(returnType=ner_schema)
 # @udf(returnType=ArrayType(StringType()))
+
+NER_LIST = ["PERSON","NORP","FAC","ORG","GPE","LOC","PRODUCT","EVENT","WORK_OF_ART","LAW","LANGUAGE"]
 @udf(returnType=StringType())
 def perform_ner(comments):
     text = NER(comments)
-    return ','.join([ ent.text for ent in text.ents])
+    return ','.join([ ent.text for ent in text.ents if ent.label_ in NER_LIST])
 
 stop_words = stopwords.words('english')
 
@@ -110,6 +112,11 @@ words = words.withColumn("words", lower("words"))\
             .withColumn("words", regexp_replace("words", "[^a-zA-Z0-9\\s]+", "")) \
             .withColumn("words", trim("words")) \
             .withColumn("count", lit(1))
+
+# remove empty & null words
+words = words.filter(col("words").isNotNull() & (col("words") != ""))
+words.printSchema()
+# words = words.selectExpr("col as words")
 
 # words = words.withColumn("timestamp", date_trunc("second", current_timestamp()))
 # words = words.withColumn("timestamp", date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))

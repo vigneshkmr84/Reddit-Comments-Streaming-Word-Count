@@ -1,6 +1,5 @@
 import os
 import sys
-# import time
 import praw
 import requests
 from dotenv import load_dotenv
@@ -23,12 +22,11 @@ def process_comments_from_reddit(client_id, secret, user_name, password, bootstr
                         user_agent = 'project for bigdata spark streaming',
                         password = password)
 
-    sub_reddit = reddit.subreddit("soccer")
+    sub_reddit = reddit.subreddit("AskReddit")
     # keep all new comments from all sub-reddit
     for comment in sub_reddit.stream.comments(skip_existing=True):
         print(comment.body)
         push_to_kafka(comment.body, bootstrap_server, kafka_topic)
-        #time.sleep(3)
 
 # Retrieve reddit token with client_id, secret, user_name & password
 def get_reddit_token(client_id, secret, user_name, password):
@@ -59,7 +57,6 @@ if __name__ == '__main__':
     secret = os.getenv("secret")
     token = get_reddit_token(client_id, secret, user_name, password)
     if token:
-        # print("Token ", token)
         process_comments_from_reddit(client_id, secret, user_name, password, bootstrap_server, TOPIC)
     else:
         print("Error in retreiving token.")
