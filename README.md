@@ -168,3 +168,8 @@ secret=
 ``` bash
 spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py
 ```
+
+### For easy running pyspark app
+```bash
+bash start_pyspark_connector.sh
+```
