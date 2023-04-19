@@ -26,6 +26,7 @@ Download Kafka 3.4.0 from https://downloads.apache.org/kafka/3.4.0/kafka-3.4.0-s
 
 #### Send Message via CLI:
 `bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic reddit-comments`
+
 ---
 
 # ELK (Elastic-LogStash-Kibana)
@@ -50,7 +51,7 @@ xpack.security.http.ssl:
 
 ```
 
-**Run** `bin/elasticsearch`
+**Run: `bin/elasticsearch`**
 
 <br>
 
@@ -60,7 +61,7 @@ xpack.security.http.ssl:
 elasticsearch.hosts: ['http://192.168.10.21:9200']
 
 
-**Run** `bin/kibana`
+**Run: `bin/kibana`**
 
 <br>
 
@@ -92,7 +93,7 @@ output {
 
 ```
 
-**Run** `bin/logstash -f logstash.conf`
+**Run: `bin/logstash -f logstash.conf`**
 
 <br>
 
@@ -128,7 +129,7 @@ Body:
 ##### Running the code
 
 ``` bash
-spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 /Users/vigneshthirunavukkarasu/Downloads/Bigdata-Assignment-3/Producer/SparkConnector.py
+spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py
 ```
 
 **NOTE: Make sure the `spark-sql-kafka` package version matches that of pyspark**
@@ -137,15 +138,23 @@ spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 /Users/
 
 ## Start Reddit Comments Producer
 
-comments_producer.py will keep reading from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
+`comments_producer.py` will keep reading **COMMENTS** from `AskReddit` subreddit and push the messages to `reddit-comments` topic to Kafka Broker running in `localhost:9092`
 
 ``` bash
 python -u comments_producer.py reddit-comments localhost:9092
 ```
 
+**NOTE: Make sure you have `.env` file configured properly as below.**
+``` config
+user_name=
+password=
+client_id=
+secret=
+```
+
 ## Start PySpark NER Stream Processor
 
-spart_connector.py will read messages from `reddit-comments` topic and filters the Named Entities from each comments and push it to `word-counts` topic.
+`spart_connector.py` will read messages from `reddit-comments` topic and filters the Named Entities from each comments and push it to `word-counts` topic.
 
 ``` bash
 spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.1 --conf spark.sql.streaming.forceDeleteTempCheckpointLocation=true spark_connector.py
