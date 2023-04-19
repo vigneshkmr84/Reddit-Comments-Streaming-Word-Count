@@ -114,12 +114,12 @@ words.printSchema()
 window_size = "5 seconds"
 
 # need to do the word count here.
-words = words.groupBy('words').count()
+words_count = words.groupBy('words').count()
 # wordCounts = words.groupBy('words').count()
 
-words = words.withColumn("timestamp", date_trunc("second", current_timestamp()))
+words_count = words_count.withColumn("timestamp", date_trunc("second", current_timestamp()))
 
-words.printSchema()
+words_count.printSchema()
 
 # words_tumbling = words.groupBy(window("timestamp", windowDuration=window_size), "words").count().alias("count")
 
@@ -135,7 +135,7 @@ final_schema = StructType([
     StructField("count", IntegerType(), True)
 ])
 
-console_query = words.orderBy(desc("count")).writeStream\
+console_query = words_count.orderBy(desc("count")).writeStream\
                     .outputMode("complete")\
                     .format("console")\
                     .start()
