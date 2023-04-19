@@ -153,6 +153,11 @@ bash start_pyspark_connector.sh
 python -u comments_producer.py reddit-comments localhost:9092
 ```
 
+**Setting up Reddit for streaming, please refer the url**
+https://www.geeksforgeeks.org/how-to-get-client_id-and-client_secret-for-python-reddit-api-registration/
+
+<br>
+
 **NOTE: Make sure you have `.env` file configured properly as below.**
 ``` config
 user_name=
